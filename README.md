@@ -1,2 +1,2 @@
 # otb-simpleextractiontools
-Simple extraction tools 
+Simple extraction tools developed in the framework of Theia-Geosud
