@@ -24,8 +24,10 @@
 #include "otbVectorDataToLabelImageCustomFilter.h"
 #include "itkMaskImageFilter.h"
 #include "otbVectorDataIntoImageProjectionFilter.h"
-#include "otbVectorDataProperties.h"
 #include "otbRegionComparator.h"
+
+// ogr
+#include "otbOGR.h"
 
 using namespace std;
 
@@ -63,7 +65,6 @@ public:
       FloatVectorImageType> VectorDataReprojFilterType;
   typedef otb::VectorDataToLabelImageCustomFilter<VectorDataType,
       MaskImageType> RasteriseFilterType;
-  typedef otb::VectorDataProperties<VectorDataType> VectorDataPropertiesType;
 
   void DoInit()
   {
@@ -119,15 +120,55 @@ public:
     vdReproj->Update();
 
     /* Get VectorData bounding box */
-    vdProperties = VectorDataPropertiesType::New();
-    vdProperties->SetVectorDataObject(vdReproj->GetOutput());
-    vdProperties->ComputeBoundingRegion();
+    OGREnvelope env;
+    otb::ogr::DataSource::Pointer ogrDS;
+    ogrDS = otb::ogr::DataSource::New(GetParameterString("shp") ,
+        otb::ogr::DataSource::Modes::Read);
+    double ulx, uly, lrx, lry;
+    bool extentAvailable = true;
+    std::string inputProjectionRef = "";
+    // First try to get the extent in the metadata
+    try
+    {
+      inputProjectionRef = ogrDS->GetGlobalExtent(ulx,uly,lrx,lry);
+    }
+    catch(const itk::ExceptionObject&)
+    {
+      extentAvailable = false;
+    }
+    // If no extent available force the computation of the extent
+    if (!extentAvailable)
+      {
+      try
+      {
+        inputProjectionRef = ogrDS->GetGlobalExtent(ulx,uly,lrx,lry,true);
+        extentAvailable = true;
+      }
+      catch(itk::ExceptionObject & err)
+      {
+        extentAvailable = false;
+
+        otbAppLogFATAL(<<"Failed to retrieve the spatial extent of the dataset "
+            "in force mode. The spatial extent is mandatory when "
+            "orx, ory, spx and spy parameters are not set, consider "
+            "setting them. Error from library: "<<err.GetDescription());
+      }
+      }
+    otb::RegionComparator<FloatVectorImageType, FloatVectorImageType>::RSRegion::PointType rsRoiOrigin;
+    rsRoiOrigin[0] = ulx;
+    rsRoiOrigin[1] = uly;
+    otb::RegionComparator<FloatVectorImageType, FloatVectorImageType>::RSRegion::SizeType rsRoiSize;
+    rsRoiSize[0] = lrx - ulx;
+    rsRoiSize[1] = lry - uly;
+    otb::RegionComparator<FloatVectorImageType, FloatVectorImageType>::RSRegion rsRoi;
+    rsRoi.SetOrigin(rsRoiOrigin);
+    rsRoi.SetSize(rsRoiSize);
 
     /* Compute intersecting region */
     otb::RegionComparator<FloatVectorImageType, FloatVectorImageType> comparator;
     comparator.SetImage1(xs);
     FloatVectorImageType::RegionType roi =
-        comparator.RSRegionToImageRegion(vdProperties->GetBoundingRegion());
+        comparator.RSRegionToImageRegion(rsRoi /*vdProperties->GetBoundingRegion()*/);
     roi.PadByRadius(1); // avoid extrapolation
     if (!roi.Crop(xs->GetLargestPossibleRegion()))
       {
@@ -165,7 +206,6 @@ public:
   ExtractFilterType::Pointer m_Filter;
   VectorDataReprojFilterType::Pointer vdReproj;
   RasteriseFilterType::Pointer rasterizer;
-  VectorDataPropertiesType::Pointer vdProperties;
   MaskFilterType::Pointer maskFilter;
 
 };
