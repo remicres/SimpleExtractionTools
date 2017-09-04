@@ -1,6 +1,6 @@
 /*=========================================================================
 
-  Copyright (c) IRSTEA. All rights reserved.
+  Copyright (c) Remi Cresson (IRSTEA). All rights reserved.
 
 
      This software is distributed WITHOUT ANY WARRANTY; without even

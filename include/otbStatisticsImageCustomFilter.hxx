@@ -1,9 +1,7 @@
 /*=========================================================================
 
-  Copyright (c) IRSTEA. All rights reserved.
+  Copyright (c) Remi Cresson (IRSTEA). All rights reserved.
 
-Some parts of this code are derived from ITK. See ITKCopyright.txt
-for details.
 
      This software is distributed WITHOUT ANY WARRANTY; without even
      the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
