@@ -35,6 +35,11 @@ using namespace std;
 
 namespace otb {
 
+/* \class RegionComparator
+ * \brief Compare regions layout
+ *
+ *  \ingroup SimpleExtractionTools
+ */
 template<class TInputImage1, class TInputImage2=TInputImage1> class RegionComparator{
 public:
 

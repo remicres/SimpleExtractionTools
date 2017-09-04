@@ -34,7 +34,7 @@ namespace otb
  * A value to ignore (in the stats) can be chosen
  *
  * \ingroup MathematicalStatisticsImageCustomFilters
- * \ingroup ITKImageStatistics
+ * \ingroup SimpleExtractionTools
  *
  * \wiki
  * \wikiexample{Statistics/StatisticsImageCustomFilter,Compute min\, max\, variance and mean of an Image.}

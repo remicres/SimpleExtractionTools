@@ -39,6 +39,7 @@ namespace otb {
  *
  *  OGRRegisterAll() method must have been called before applying filter.
  *
+ * \ingroup SimpleExtractionTools
  */
 template <class TVectorData, class TOutputImage  >
 class  ITK_EXPORT VectorDataToLabelImageCustomFilter :
