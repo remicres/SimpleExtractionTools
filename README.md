@@ -9,3 +9,6 @@ This mapper produces an output vector data layer. The input pipeline it triggere
 
 ## RegionComparator
 A set of useful functions, maybe already existing somewhere in the OTB. Images layout, region intersection, coordinates conversion of regions, etc.
+
+## VectorDataToLabelImageCustomFilter
+This is the clone of the VectorDataToLabelImageFilter, but this one has one option for burning one given value.
