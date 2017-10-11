@@ -144,6 +144,8 @@ public:
 
   void GenerateInputRequestedRegion() {};
 
+  std::string GetFieldName() { return vectorizeFilter->GetFieldName(); }
+
 protected:
   CacheLessLabelImageToVectorData();
   ~CacheLessLabelImageToVectorData() ITK_OVERRIDE;
