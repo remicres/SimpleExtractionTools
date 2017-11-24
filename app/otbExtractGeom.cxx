@@ -32,6 +32,9 @@
 // Projection
 #include "otbGenericRSTransform.h"
 
+// No-data
+#include "otbChangeInformationImageFilter.h"
+
 using namespace std;
 
 namespace otb
@@ -73,6 +76,9 @@ public:
   typedef otb::GenericRSTransform<>                                   RSTransformType;
   typedef otb::GenericMapProjection<otb::TransformDirection::FORWARD> MapProjectionType;
   typedef RSTransformType::InputPointType                             Point3DType;
+
+  /** no-data */
+  typedef otb::ChangeInformationImageFilter<FloatVectorImageType>     ChangeInfoFilterType;
 
   void DoInit()
   {
@@ -211,7 +217,18 @@ public:
     m_ExtractFilter->SetInput(m_MaskFilter->GetOutput());
     m_ExtractFilter->SetExtractionRegion(roi);
 
-    SetParameterOutputImage("out", m_ExtractFilter->GetOutput());
+    /* Change no-data value */
+    std::vector<bool> flags;
+    std::vector<double> values;
+    unsigned int nbBands = xs->GetNumberOfComponentsPerPixel();
+    flags.resize(nbBands, true);
+    values.resize(nbBands, 0.0);
+    m_MetaDataChanger = ChangeInfoFilterType::New();
+    m_MetaDataChanger->SetInput(m_ExtractFilter->GetOutput());
+    m_MetaDataChanger->SetOutputMetaData<std::vector<bool> >(otb::MetaDataKey::NoDataValueAvailable,&flags);
+    m_MetaDataChanger->SetOutputMetaData<std::vector<double> >(otb::MetaDataKey::NoDataValue,&values);
+
+    SetParameterOutputImage("out", m_MetaDataChanger->GetOutput());
 
   }
 
@@ -219,7 +236,7 @@ public:
   VectorDataReprojFilterType::Pointer   m_VectorDataReprojectionFilter;
   RasteriseFilterType::Pointer          m_RasterizeFilter;
   MaskFilterType::Pointer               m_MaskFilter;
-
+  ChangeInfoFilterType::Pointer         m_MetaDataChanger;
 };
 }
 }
