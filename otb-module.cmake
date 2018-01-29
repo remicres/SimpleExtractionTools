@@ -6,6 +6,8 @@ otb_module(SimpleExtractionTools
 	OTBApplicationEngine
 	OTBConversion
 	OTBImageBase
+	OTBImageIO
+	
   TEST_DEPENDS
     OTBTestKernel
     OTBCommandLine
