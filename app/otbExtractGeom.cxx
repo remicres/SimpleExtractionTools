@@ -201,7 +201,7 @@ public:
     m_RasterizeFilter = RasteriseFilterType::New();
     m_RasterizeFilter->AddVectorData(m_VectorDataReprojectionFilter->GetOutput());
     m_RasterizeFilter->SetOutputOrigin(xs->GetOrigin());
-    m_RasterizeFilter->SetOutputSpacing(xs->GetSpacing());
+    m_RasterizeFilter->SetOutputSpacing(xs->GetSignedSpacing());
     m_RasterizeFilter->SetOutputSize(xs->GetLargestPossibleRegion().GetSize());
     m_RasterizeFilter->SetBurnMaxValueMode(true);
     m_RasterizeFilter->SetOutputProjectionRef(xs->GetProjectionRef());
