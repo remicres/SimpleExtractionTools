@@ -201,7 +201,7 @@ CacheLessLabelImageToVectorData<TInputImagePixel>
   bufferedInputImage->SetRegions(inputRegion);
   bufferedInputImage->Allocate();
   bufferedInputImage->SetMetaDataDictionary(inputPtr->GetMetaDataDictionary());
-  bufferedInputImage->SetSpacing(inputPtr->GetSpacing());
+  bufferedInputImage->SetSpacing(inputPtr->GetSignedSpacing());
   bufferedInputImage->SetOrigin (inputPtr->GetOrigin() );
 
 
