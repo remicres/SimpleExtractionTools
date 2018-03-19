@@ -28,9 +28,8 @@
 
 // ogr
 #include "otbOGR.h"
-
-// Projection
-#include "otbGenericRSTransform.h"
+#include "otbGeometriesProjectionFilter.h"
+#include "otbGeometriesSet.h"
 
 // No-data
 #include "otbChangeInformationImageFilter.h"
@@ -72,13 +71,12 @@ public:
   typedef otb::VectorDataToLabelImageCustomFilter<VectorDataType,
       MaskImageType>                                                  RasteriseFilterType;
 
-  /** projection */
-  typedef otb::GenericRSTransform<>                                   RSTransformType;
-  typedef otb::GenericMapProjection<otb::TransformDirection::FORWARD> MapProjectionType;
-  typedef RSTransformType::InputPointType                             Point3DType;
-
   /** no-data */
   typedef otb::ChangeInformationImageFilter<FloatVectorImageType>     ChangeInfoFilterType;
+
+  typedef otb::GeometriesSet GeometriesType;
+
+  typedef otb::GeometriesProjectionFilter ProjectionFilterType;
 
   void DoInit()
   {
@@ -130,11 +128,42 @@ public:
     m_VectorDataReprojectionFilter->SetInputImage(xs);
     m_VectorDataReprojectionFilter->Update();
 
+    // Get vector data BBOX
+    otb::ogr::DataSource::Pointer vectors =
+      otb::ogr::DataSource::New(this->GetParameterString("vec"));
+    otb::ogr::DataSource::Pointer reprojVector = vectors;
+    GeometriesType::Pointer inputGeomSet;
+    ProjectionFilterType::Pointer geometriesProjFilter;
+    GeometriesType::Pointer outputGeomSet;
+    bool doReproj = true;
+    // don't reproject for these cases
+    std::string imageProjectionRef = xs->GetProjectionRef();
+    FloatVectorImageType::ImageKeywordlistType imageKwl = xs->GetImageKeywordlist();
+    std::string vectorProjectionRef = shp->GetProjectionRef();
+    if (vectorProjectionRef.empty() ||
+        (imageProjectionRef == vectorProjectionRef) ||
+        (imageProjectionRef.empty() && imageKwl.GetSize() == 0))
+      doReproj = false;
+
+    if (doReproj)
+      {
+      inputGeomSet = GeometriesType::New(vectors);
+      reprojVector = otb::ogr::DataSource::New();
+      outputGeomSet = GeometriesType::New(reprojVector);
+      // Filter instantiation
+      geometriesProjFilter = ProjectionFilterType::New();
+      geometriesProjFilter->SetInput(inputGeomSet);
+      if (imageProjectionRef.empty())
+        {
+        geometriesProjFilter->SetOutputKeywordList(imageKwl);
+        }
+      geometriesProjFilter->SetOutputProjectionRef(imageProjectionRef);
+      geometriesProjFilter->SetOutput(outputGeomSet);
+      otbAppLogINFO("Reprojecting input vectors...");
+      geometriesProjFilter->Update();
+      }
+
     /* Get VectorData bounding box */
-    OGREnvelope env;
-    otb::ogr::DataSource::Pointer ogrDS;
-    ogrDS = otb::ogr::DataSource::New(GetParameterString("vec") ,
-        otb::ogr::DataSource::Modes::Read);
     itk::Point<double, 2> ulp_in,  lrp_in;
     bool extentAvailable = true;
     std::string inputProjectionRef = "";
@@ -142,7 +171,7 @@ public:
     // First try to get the extent in the metadata
     try
     {
-        inputProjectionRef = ogrDS->GetGlobalExtent(ulp_in[0],ulp_in[1],lrp_in[0],lrp_in[1]);
+        inputProjectionRef = reprojVector->GetGlobalExtent(ulp_in[0],ulp_in[1],lrp_in[0],lrp_in[1]);
     }
     catch(const itk::ExceptionObject&)
     {
@@ -153,7 +182,7 @@ public:
       {
         try
         {
-            inputProjectionRef = ogrDS->GetGlobalExtent(ulp_in[0],ulp_in[1],lrp_in[0],lrp_in[1],true);
+            inputProjectionRef = reprojVector->GetGlobalExtent(ulp_in[0],ulp_in[1],lrp_in[0],lrp_in[1],true);
             extentAvailable = true;
         }
         catch(itk::ExceptionObject & err)
@@ -166,22 +195,12 @@ public:
                 "setting them. Error from library: "<<err.GetDescription());
         }
       }
-
-    // Reproject region
-    RSTransformType::Pointer rsTransform = RSTransformType::New();
-    rsTransform->SetInputProjectionRef(shp->GetProjectionRef());
-    rsTransform->SetOutputKeywordList(xs->GetImageKeywordlist());
-    rsTransform->SetOutputProjectionRef(xs->GetProjectionRef());
-    rsTransform->InstantiateTransform();
-    itk::Point<double, 2> ulp_out , lrp_out;
-    ulp_out = rsTransform->TransformPoint(ulp_in);
-    lrp_out = rsTransform->TransformPoint(lrp_in);
     otb::RegionComparator<FloatVectorImageType, FloatVectorImageType>::RSRegion::PointType rsRoiOrigin;
-    rsRoiOrigin[0] = ulp_out[0];
-    rsRoiOrigin[1] = ulp_out[1];
+    rsRoiOrigin[0] = ulp_in[0] ;
+    rsRoiOrigin[1] = ulp_in[1] ;
     otb::RegionComparator<FloatVectorImageType, FloatVectorImageType>::RSRegion::SizeType rsRoiSize;
-    rsRoiSize[0] = lrp_out[ 0 ] - ulp_out[0];
-    rsRoiSize[1] = lrp_out[ 1 ] - ulp_out[1];
+    rsRoiSize[0] = lrp_in[ 0 ] - rsRoiOrigin[0];
+    rsRoiSize[1] = lrp_in[ 1 ] - rsRoiOrigin[1];
     otb::RegionComparator<FloatVectorImageType, FloatVectorImageType>::RSRegion rsRoi;
     rsRoi.SetOrigin(rsRoiOrigin);
     rsRoi.SetSize(rsRoiSize);
