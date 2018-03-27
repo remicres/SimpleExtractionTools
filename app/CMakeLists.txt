@@ -12,3 +12,7 @@ OTB_CREATE_APPLICATION(NAME           MeanResample
                        SOURCES        otbMeanResample.cxx
                        LINK_LIBRARIES OTBCommon)
 
+OTB_CREATE_APPLICATION(NAME           ZonalStatistics
+                       SOURCES        otbZonalStatistics.cxx
+                       LINK_LIBRARIES OTBCommon)
+
