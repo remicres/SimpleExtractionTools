@@ -94,6 +94,9 @@ public:
     AddParameter(ParameterType_Float, "nodata", "No-data value");
     MandatoryOff("nodata");
 
+    // reprojection
+    AddParameter(ParameterType_Bool, "reproject", "Reproject the input vector");
+
     // Output
     AddParameter(ParameterType_OutputVectorData, "out",   "Output vector data");
 
@@ -135,16 +138,24 @@ public:
       }
 
     // Reproject vector data
-    otbAppLogINFO("Reproject vector data");
-    m_VectorDataReprojectionFilter = VectorDataReprojFilterType::New();
-    m_VectorDataReprojectionFilter->SetInputVectorData(shp);
-    m_VectorDataReprojectionFilter->SetInputImage(img);
-    m_VectorDataReprojectionFilter->Update();
+    if (GetParameterInt("reproject") != 0)
+      {
+      otbAppLogINFO("Reproject vector data");
+      m_VectorDataReprojectionFilter = VectorDataReprojFilterType::New();
+      m_VectorDataReprojectionFilter->SetInputVectorData(shp);
+      m_VectorDataReprojectionFilter->SetInputImage(img);
+      AddProcess(m_VectorDataReprojectionFilter, "Reproject vector data");
+      m_VectorDataReprojectionFilter->Update();
+      vdSrc = m_VectorDataReprojectionFilter->GetOutput();
+      }
+    else
+      {
+      vdSrc = shp;
+      }
 
     // Add a FID field
-    otbAppLogINFO("Adding internal FID");
     LabelValueType internalFID = 1;
-    const string internalFIDField = "fid____";
+    const string internalFIDField = "__fid___";
     vdWithFid = VectorDataType::New();
     DataNodeType::Pointer root1 = vdWithFid->GetDataTree()->GetRoot()->Get();
     DataNodeType::Pointer document1 = DataNodeType::New();
@@ -153,8 +164,8 @@ public:
     DataNodeType::Pointer folder1 = DataNodeType::New();
     folder1->SetNodeType(otb::FOLDER);
     vdWithFid->GetDataTree()->Add(folder1, document1);
-    vdWithFid->SetProjectionRef(m_VectorDataReprojectionFilter->GetOutput()->GetProjectionRef());
-    TreeIteratorType itVector1(m_VectorDataReprojectionFilter->GetOutput()->GetDataTree());
+    vdWithFid->SetProjectionRef(vdSrc->GetProjectionRef());
+    TreeIteratorType itVector1(vdSrc->GetDataTree());
     itVector1.GoToBegin();
     while (!itVector1.IsAtEnd())
       {
@@ -169,7 +180,6 @@ public:
       } // next feature
 
     // Rasterize vector data
-    otbAppLogINFO("Rasterize vector data");
     m_RasterizeFilter = RasterizeFilterType::New();
     m_RasterizeFilter->AddVectorData(vdWithFid);
     m_RasterizeFilter->SetOutputOrigin(img->GetOrigin());
@@ -177,7 +187,7 @@ public:
     m_RasterizeFilter->SetOutputSize(img->GetLargestPossibleRegion().GetSize());
     m_RasterizeFilter->SetOutputProjectionRef(img->GetProjectionRef());
     m_RasterizeFilter->SetBurnAttribute(internalFIDField);
-    m_RasterizeFilter->Update();
+    m_RasterizeFilter->UpdateOutputInformation();
 
     // Computing stats
     otbAppLogINFO("Computing stats");
@@ -206,11 +216,16 @@ public:
     int m_NumberOfDivisions = m_StreamingManager->GetNumberOfSplits();
     for (int m_CurrentDivision = 0; m_CurrentDivision < m_NumberOfDivisions; m_CurrentDivision++)
       {
-      std::cout << "region: " << m_CurrentDivision << std::endl;
+
       FloatVectorImageType::RegionType streamRegion = m_StreamingManager->GetSplit(m_CurrentDivision);
+
       img->SetRequestedRegion(streamRegion);
       img->PropagateRequestedRegion();
       img->UpdateOutputData();
+
+      m_RasterizeFilter->GetOutput()->SetRequestedRegion(streamRegion);
+      m_RasterizeFilter->GetOutput()->PropagateRequestedRegion();
+      m_RasterizeFilter->GetOutput()->UpdateOutputData();
 
       LabelIteratorType it(m_RasterizeFilter->GetOutput(), streamRegion);
       ImageIteratorType it_in(img, streamRegion);
@@ -276,7 +291,7 @@ public:
       }
 
     // Add a statistics fields
-    otbAppLogINFO("Writing stats in output vector data");
+    otbAppLogINFO("Writing output vector data");
     internalFID = 1;
     vdWithStats = VectorDataType::New();
     DataNodeType::Pointer root = vdWithStats->GetDataTree()->GetRoot()->Get();
@@ -286,23 +301,20 @@ public:
     DataNodeType::Pointer folder = DataNodeType::New();
     folder->SetNodeType(otb::FOLDER);
     vdWithStats->GetDataTree()->Add(folder, document);
-    vdWithStats->SetProjectionRef(m_VectorDataReprojectionFilter->GetOutput()->GetProjectionRef());
-    TreeIteratorType itVector(m_VectorDataReprojectionFilter->GetOutput()->GetDataTree());
+    vdWithStats->SetProjectionRef(vdSrc->GetProjectionRef());
+    TreeIteratorType itVector(vdSrc->GetDataTree());
     itVector.GoToBegin();
     while (!itVector.IsAtEnd())
       {
       if (!itVector.Get()->IsRoot() && !itVector.Get()->IsDocument() && !itVector.Get()->IsFolder())
         {
         DataNodeType::Pointer currentGeometry = itVector.Get();
-        currentGeometry->SetFieldAsInt("fid", internalFID );
         for (unsigned int band = 0 ; band < nBands ; band++)
           {
           currentGeometry->SetFieldAsDouble(CreateFieldName("mean",  band), means   [band][internalFID] );
           currentGeometry->SetFieldAsDouble(CreateFieldName("stdev", band), stdevs  [band][internalFID] );
           currentGeometry->SetFieldAsDouble(CreateFieldName("min",   band), minimums[band][internalFID] );
           currentGeometry->SetFieldAsDouble(CreateFieldName("max",   band), maximums[band][internalFID] );
-//          currentGeometry->SetFieldAsDouble(CreateFieldName("sum",   band), sum     [band][internalFID] );
-//          currentGeometry->SetFieldAsDouble(CreateFieldName("sqSum", band), sqSum   [band][internalFID] );
           }
         currentGeometry->SetFieldAsDouble("count", static_cast<double>(counts[internalFID]) );
 
@@ -312,11 +324,11 @@ public:
       ++itVector;
       } // next feature
 
-
     SetParameterOutputVectorData("out", vdWithStats);
 
   }
 
+  VectorDataType::Pointer vdSrc;
   VectorDataType::Pointer vdWithFid;
   VectorDataType::Pointer vdWithStats;
   VectorDataReprojFilterType::Pointer m_VectorDataReprojectionFilter;
