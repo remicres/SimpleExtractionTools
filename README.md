@@ -1,7 +1,21 @@
 # Simple Extraction Tools
 Simple extraction tools remote module developed in the framework of Theia-Geosud
 
-# Contents
+# Applications for the user
+
+## ExtractBand
+An application dedicated to extract channels of an image.
+
+## ExtractGeom
+An application which extracts an image region from an input vector data. The output image is cut around the vector data and croped on the resulting region, that is the intersection between the vector data region and the entire image region.
+
+## MeanResample
+Produces an output image resampled using the local mean of pixels.
+
+## ZonalStatistics
+An application dedicated to compute zonal satistics (min, max, mean, standard deviation) of an image for each polygons of the input vector data.
+
+# Stuff for the developper
 This remote module of Orféo ToolBox contains some useful filters and stuff for remote sensing image processing. 
 
 ## CacheLessLabelImageToVectorData
