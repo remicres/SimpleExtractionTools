@@ -17,19 +17,11 @@
 
 // Application engine
 #include "otbStandardFilterWatcher.h"
-#include "itkFixedArray.h"
 
-// Filter
+// Filters
 #include "otbVectorDataToLabelImageFilter.h"
 #include "otbVectorDataIntoImageProjectionFilter.h"
-
-// Vnl vector
-#include "vnl/vnl_vector.h"
-
-// itk iterator
-#include "itkImageRegionConstIterator.h"
-
-using namespace std;
+#include "otbStreamingStatisticsMapFromLabelImageFilter.h"
 
 namespace otb
 {
@@ -48,8 +40,8 @@ public:
 
 
   /* vector data filters */
-  typedef size_t                                                      LabelValueType;
-  typedef otb::Image<LabelValueType, 2>                               LabelImageType;
+  typedef UInt32ImageType                                             LabelImageType;
+  typedef LabelImageType::ValueType                                   LabelValueType;
   typedef otb::VectorData<double, 2>                                  VectorDataType;
   typedef otb::VectorDataIntoImageProjectionFilter<VectorDataType,
       FloatVectorImageType>                                           VectorDataReprojFilterType;
@@ -61,12 +53,8 @@ public:
   typedef DataNodeType::PolygonListPointerType                        PolygonListPointerType;
 
   /** Statistics */
-  typedef vnl_matrix<double>                                          RealMatrix;
-  typedef vnl_vector<LabelValueType>                                  SizeVector;
-
-  /** Image iterator */
-  typedef itk::ImageRegionConstIterator<LabelImageType>               LabelIteratorType;
-  typedef itk::ImageRegionConstIterator<FloatVectorImageType>         ImageIteratorType;
+  typedef otb::StreamingStatisticsMapFromLabelImageFilter<FloatVectorImageType,
+      LabelImageType>                                                 StatsFilterType;
 
   /** Standard macro */
   itkNewMacro(Self);
@@ -123,6 +111,15 @@ public:
     return ss.str();
   }
 
+  FloatVectorImageType::PixelType NullPixel(FloatVectorImageType::Pointer & img)
+  {
+  const unsigned int nBands = img->GetNumberOfComponentsPerPixel();
+  FloatVectorImageType::PixelType pix;
+  pix.SetSize(nBands);
+  pix.Fill(0);
+  return pix;
+  }
+
   void DoExecute()
   {
 
@@ -146,193 +143,98 @@ public:
       m_VectorDataReprojectionFilter->SetInputImage(img);
       AddProcess(m_VectorDataReprojectionFilter, "Reproject vector data");
       m_VectorDataReprojectionFilter->Update();
-      vdSrc = m_VectorDataReprojectionFilter->GetOutput();
+      m_VectorDataSrc = m_VectorDataReprojectionFilter->GetOutput();
       }
     else
       {
-      vdSrc = shp;
+      m_VectorDataSrc = shp;
       }
 
-    // Add a FID field
-    LabelValueType internalFID = 1;
-    const string internalFIDField = "__fid___";
-    vdWithFid = VectorDataType::New();
-    DataNodeType::Pointer root1 = vdWithFid->GetDataTree()->GetRoot()->Get();
-    DataNodeType::Pointer document1 = DataNodeType::New();
-    document1->SetNodeType(otb::DOCUMENT);
-    vdWithFid->GetDataTree()->Add(document1, root1);
-    DataNodeType::Pointer folder1 = DataNodeType::New();
-    folder1->SetNodeType(otb::FOLDER);
-    vdWithFid->GetDataTree()->Add(folder1, document1);
-    vdWithFid->SetProjectionRef(vdSrc->GetProjectionRef());
-    TreeIteratorType itVector1(vdSrc->GetDataTree());
-    itVector1.GoToBegin();
-    while (!itVector1.IsAtEnd())
-      {
-      if (!itVector1.Get()->IsRoot() && !itVector1.Get()->IsDocument() && !itVector1.Get()->IsFolder())
-        {
-        DataNodeType::Pointer currentGeometry = itVector1.Get();
-        currentGeometry->SetFieldAsInt(internalFIDField, internalFID );
-        vdWithFid->GetDataTree()->Add(currentGeometry, folder1);
-        internalFID++;
-        }
-      ++itVector1;
-      } // next feature
+    // Internal no-data value
+    const LabelValueType intNoData = itk::NumericTraits<LabelValueType>::max();
 
     // Rasterize vector data
     m_RasterizeFilter = RasterizeFilterType::New();
-    m_RasterizeFilter->AddVectorData(vdWithFid);
+    m_RasterizeFilter->AddVectorData(m_VectorDataSrc);
     m_RasterizeFilter->SetOutputOrigin(img->GetOrigin());
     m_RasterizeFilter->SetOutputSpacing(img->GetSignedSpacing());
     m_RasterizeFilter->SetOutputSize(img->GetLargestPossibleRegion().GetSize());
     m_RasterizeFilter->SetOutputProjectionRef(img->GetProjectionRef());
-    m_RasterizeFilter->SetBurnAttribute(internalFIDField);
-    m_RasterizeFilter->UpdateOutputInformation();
+    m_RasterizeFilter->SetBurnAttribute("________");
+    m_RasterizeFilter->SetDefaultBurnValue(0);
+    m_RasterizeFilter->SetGlobalWarningDisplay(false);
+    m_RasterizeFilter->SetBackgroundValue(intNoData);
 
     // Computing stats
-    otbAppLogINFO("Computing stats");
+    m_StatsFilter = StatsFilterType::New();
+    m_StatsFilter->SetInput(img);
+    m_StatsFilter->SetInputLabelImage(m_RasterizeFilter->GetOutput());
+    m_StatsFilter->GetStreamer()->SetAutomaticAdaptativeStreaming(GetParameterInt("ram"));
+    AddProcess(m_StatsFilter->GetStreamer(), "Computing statistics");
+    m_StatsFilter->Update();
 
-    // Explicit streaming over the input target image, based on the RAM parameter
-    typedef otb::RAMDrivenStrippedStreamingManager<FloatVectorImageType> StreamingManagerType;
-    StreamingManagerType::Pointer m_StreamingManager = StreamingManagerType::New();
-    m_StreamingManager->SetAvailableRAMInMB(GetParameterInt("ram"));
-    m_StreamingManager->PrepareStreaming(img, img->GetLargestPossibleRegion() );
-
-    // Init. stats containers
-    const LabelValueType N = internalFID;
-    const unsigned int nBands = img->GetNumberOfComponentsPerPixel();
-    RealMatrix minimums(nBands, N, itk::NumericTraits<double>::max());
-    RealMatrix maximums(nBands, N, itk::NumericTraits<double>::min());
-    RealMatrix sum     (nBands, N, 0);
-    RealMatrix sqSum   (nBands, N, 0);
-    RealMatrix means   (nBands, N, 0);
-    RealMatrix stdevs  (nBands, N, 0);
-    SizeVector counts(N,0);
-    if (m_RasterizeFilter->GetOutput()->GetLargestPossibleRegion().GetNumberOfPixels() != img->GetLargestPossibleRegion().GetNumberOfPixels())
-      {
-      otbAppLogFATAL("Rasterized image and input image don't have the same number of pixels");
-      }
-
-    int m_NumberOfDivisions = m_StreamingManager->GetNumberOfSplits();
-    for (int m_CurrentDivision = 0; m_CurrentDivision < m_NumberOfDivisions; m_CurrentDivision++)
-      {
-
-      FloatVectorImageType::RegionType streamRegion = m_StreamingManager->GetSplit(m_CurrentDivision);
-
-      img->SetRequestedRegion(streamRegion);
-      img->PropagateRequestedRegion();
-      img->UpdateOutputData();
-
-      m_RasterizeFilter->GetOutput()->SetRequestedRegion(streamRegion);
-      m_RasterizeFilter->GetOutput()->PropagateRequestedRegion();
-      m_RasterizeFilter->GetOutput()->UpdateOutputData();
-
-      LabelIteratorType it(m_RasterizeFilter->GetOutput(), streamRegion);
-      ImageIteratorType it_in(img, streamRegion);
-      for (it.GoToBegin(), it_in.GoToBegin(); !it.IsAtEnd(); ++it, ++it_in)
-        {
-        const LabelValueType fid = it.Get();
-        const FloatVectorImageType::PixelType pix = it_in.Get();
-        bool valid = true;
-        if (has_nodata)
-          {
-          for (unsigned int band = 0 ; band < nBands ; band++)
-            {
-            const FloatVectorImageType::InternalPixelType val = pix[band];
-            if (val == m_InputNoData)
-              {
-              valid = false;
-              break;
-              }
-            }
-          }
-        if (valid)
-          {
-          for (unsigned int band = 0 ; band < nBands ; band++)
-            {
-            const FloatVectorImageType::InternalPixelType val = pix[band];
-            if (val < minimums[band][fid])
-              minimums[band][fid] = val;
-            if (val > maximums[band][fid])
-              maximums[band][fid] = val;
-            sum[band][fid]+=val;
-            sqSum[band][fid]+=val*val;
-            } // next band
-          counts[fid]++;
-          }
-        } // next pixel
-      }
-
-    // Summarize stats
-    otbAppLogINFO("Summarizing stats");
-    for (LabelValueType fid = 0 ; fid < N ; fid++)
-      {
-      const LabelValueType count = counts[fid];
-      for (unsigned int band = 0 ; band < nBands ; band++)
-        {
-        if (count>0)
-          {
-          means[band][fid] = sum[band][fid] / static_cast<FloatVectorImageType::InternalPixelType>(count);
-
-          // Unbiased estimate
-          FloatVectorImageType::InternalPixelType variance = 0;
-          if (count > 1)
-            {
-            variance =
-                (sqSum[band][fid] - (sum[band][fid]*sum[band][fid] / static_cast<FloatVectorImageType::InternalPixelType>(count) ) ) /
-                (static_cast<FloatVectorImageType::InternalPixelType>(count) - 1);
-            if (variance > 0)
-              {
-              stdevs[band][fid] = vcl_sqrt(variance);
-              }
-            }
-          }
-        }
-      }
+    // Remove the no-data entry
+    StatsFilterType::LabelPopulationMapType countMap = m_StatsFilter->GetLabelPopulationMap();
+    StatsFilterType::PixelValueMapType meanMap = m_StatsFilter->GetMeanValueMap();
+    StatsFilterType::PixelValueMapType stdMap = m_StatsFilter->GetStandardDeviationValueMap();
+    StatsFilterType::PixelValueMapType minMap = m_StatsFilter->GetMinValueMap();
+    StatsFilterType::PixelValueMapType maxMap = m_StatsFilter->GetMaxValueMap();
+    countMap.erase(intNoData);
+    meanMap.erase(intNoData);
+    stdMap.erase(intNoData);
+    minMap.erase(intNoData);
+    maxMap.erase(intNoData);
 
     // Add a statistics fields
     otbAppLogINFO("Writing output vector data");
-    internalFID = 1;
-    vdWithStats = VectorDataType::New();
-    DataNodeType::Pointer root = vdWithStats->GetDataTree()->GetRoot()->Get();
+    LabelValueType internalFID = 0;
+    m_NewVectorData = VectorDataType::New();
+    DataNodeType::Pointer root = m_NewVectorData->GetDataTree()->GetRoot()->Get();
     DataNodeType::Pointer document = DataNodeType::New();
     document->SetNodeType(otb::DOCUMENT);
-    vdWithStats->GetDataTree()->Add(document, root);
+    m_NewVectorData->GetDataTree()->Add(document, root);
     DataNodeType::Pointer folder = DataNodeType::New();
     folder->SetNodeType(otb::FOLDER);
-    vdWithStats->GetDataTree()->Add(folder, document);
-    vdWithStats->SetProjectionRef(vdSrc->GetProjectionRef());
-    TreeIteratorType itVector(vdSrc->GetDataTree());
+    m_NewVectorData->GetDataTree()->Add(folder, document);
+    m_NewVectorData->SetProjectionRef(m_VectorDataSrc->GetProjectionRef());
+    TreeIteratorType itVector(m_VectorDataSrc->GetDataTree());
     itVector.GoToBegin();
+
     while (!itVector.IsAtEnd())
       {
       if (!itVector.Get()->IsRoot() && !itVector.Get()->IsDocument() && !itVector.Get()->IsFolder())
         {
-        DataNodeType::Pointer currentGeometry = itVector.Get();
-        for (unsigned int band = 0 ; band < nBands ; band++)
-          {
-          currentGeometry->SetFieldAsDouble(CreateFieldName("mean",  band), means   [band][internalFID] );
-          currentGeometry->SetFieldAsDouble(CreateFieldName("stdev", band), stdevs  [band][internalFID] );
-          currentGeometry->SetFieldAsDouble(CreateFieldName("min",   band), minimums[band][internalFID] );
-          currentGeometry->SetFieldAsDouble(CreateFieldName("max",   band), maximums[band][internalFID] );
-          }
-        currentGeometry->SetFieldAsDouble("count", static_cast<double>(counts[internalFID]) );
 
-        vdWithStats->GetDataTree()->Add(currentGeometry, folder);
+        DataNodeType::Pointer currentGeometry = itVector.Get();
+
+        // Add the geometry with the new fields
+        if (countMap.count(internalFID) > 0)
+          {
+          currentGeometry->SetFieldAsDouble("count", countMap[internalFID] );
+          for (unsigned int band = 0 ; band < img->GetNumberOfComponentsPerPixel() ; band++)
+            {
+            currentGeometry->SetFieldAsDouble(CreateFieldName("mean",  band), meanMap[internalFID][band] );
+            currentGeometry->SetFieldAsDouble(CreateFieldName("stdev", band), stdMap [internalFID][band] );
+            currentGeometry->SetFieldAsDouble(CreateFieldName("min",   band), minMap [internalFID][band] );
+            currentGeometry->SetFieldAsDouble(CreateFieldName("max",   band), maxMap [internalFID][band] );
+            }
+          m_NewVectorData->GetDataTree()->Add(currentGeometry, folder);
+          }
+
         internalFID++;
         }
       ++itVector;
       } // next feature
 
-    SetParameterOutputVectorData("out", vdWithStats);
+    SetParameterOutputVectorData("out", m_NewVectorData);
 
   }
 
-  VectorDataType::Pointer vdSrc;
-  VectorDataType::Pointer vdWithFid;
-  VectorDataType::Pointer vdWithStats;
+  VectorDataType::Pointer m_VectorDataSrc;
+  VectorDataType::Pointer m_NewVectorData;
   VectorDataReprojFilterType::Pointer m_VectorDataReprojectionFilter;
   RasterizeFilterType::Pointer m_RasterizeFilter;
+  StatsFilterType::Pointer m_StatsFilter;
 
 };
 }
