@@ -124,19 +124,7 @@ protected:
   virtual void GenerateData();
 
   VectorDataToLabelImageCustomFilter();
-  virtual ~VectorDataToLabelImageCustomFilter()
-  {
-    // Destroy the geometries stored
-    for (unsigned int idx = 0; idx < m_SrcDataSetGeometries.size(); ++idx)
-      {
-      OGR_G_DestroyGeometry(m_SrcDataSetGeometries[idx]);
-      }
-
-    if (m_OGRDataSourcePointer != NULL)
-      {
-      OGRDataSource::DestroyDataSource(m_OGRDataSourcePointer);
-      }
-  }
+  virtual ~VectorDataToLabelImageCustomFilter() override {}
 
   virtual void GenerateOutputInformation();
 

@@ -18,6 +18,7 @@
 #include "itkProcessObject.h"
 #include "otbStreamingManager.h"
 #include "otbLabelImageToVectorDataFilter.h"
+#include "itkCommand.h"
 
 namespace otb
 {
