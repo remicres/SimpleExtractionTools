@@ -84,7 +84,6 @@ public:
     SetDescription("Perform geometric extraction");
 
     // Documentation
-    SetDocName("ExtractGeom");
     SetDocLongDescription("This application performs geometric extraction");
     SetDocLimitations("None");
     SetDocAuthors("RemiCresson");
