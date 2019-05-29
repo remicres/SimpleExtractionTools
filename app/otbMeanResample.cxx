@@ -55,7 +55,6 @@ public:
     SetDescription("Resample an image using the mean value of the pixels over a square neighborhood");
 
     // Documentation
-    SetDocName("ExtractBand");
     SetDocLongDescription("This application decimates an input image using the mean value of the pixels neighborhood");
     SetDocLimitations("None");
     SetDocAuthors("Remi Cresson");
