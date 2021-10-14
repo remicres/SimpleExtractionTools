@@ -8,6 +8,7 @@ otb_module(SimpleExtractionTools
 	OTBImageBase
 	OTBImageIO
 	OTBStatistics
+        OTBMosaic
 	
   TEST_DEPENDS
     OTBTestKernel

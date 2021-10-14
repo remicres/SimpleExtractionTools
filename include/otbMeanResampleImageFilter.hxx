@@ -43,15 +43,15 @@ MeanResampleImageFilter<TImage>
 
   // The new output image has the same origin
   ImagePointType origin = inputImage->GetOrigin();
-  origin[0] += 0.5 * inputImage->GetSignedSpacing()[0] * (m_StepX - 1);
-  origin[1] += 0.5 * inputImage->GetSignedSpacing()[1] * (m_StepY - 1);
+  origin[0] += 0.5 * inputImage->GetSpacing()[0] * (m_StepX - 1);
+  origin[1] += 0.5 * inputImage->GetSpacing()[1] * (m_StepY - 1);
   outputPtr->SetOrigin ( origin );
 
   // New spacing for the output image
-  ImageSpacingType spacing = inputImage->GetSignedSpacing();
+  ImageSpacingType spacing = inputImage->GetSpacing();
   spacing[0] *= m_StepX;
   spacing[1] *= m_StepY;
-  outputPtr->SetSignedSpacing (spacing);
+  outputPtr->SetSpacing (spacing);
 
   // New size for the output image
   ImageRegionType inRegion = inputImage->GetLargestPossibleRegion();
